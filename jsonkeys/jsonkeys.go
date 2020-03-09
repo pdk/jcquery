@@ -1,57 +1,56 @@
-package main
+package jsonkeys
 
 import (
 	"encoding/json"
-	"fmt"
 	"io"
 	"log"
-	"os"
 	"strings"
 )
 
-func main() {
+// GetKeys returns all the key-paths in the JSON input stream. "/" is used as
+// path delimiter, ala unix paths. If keys in the input have slashes, this won't
+// work right.
+func GetKeys(input io.Reader) ([]string, error) {
 
-	decoder := json.NewDecoder(os.Stdin)
+	decoder := json.NewDecoder(input)
 
-	// dumpTokens(decoder)
-
-	keys, err := collectKeys(uniqueStrings{}, decoder, "")
-	if err != nil {
-		log.Fatalf("%v", err)
-	}
-
-	fmt.Printf("%s\n", strings.Join(keys.values, "\n"))
-}
-
-func dumpTokens(d *json.Decoder) {
+	keys := uniqueStrings{}
+	var err error
 
 	for {
-		t, err := d.Token()
+		keys, err = collectKeys(keys, decoder, "")
 
-		if err == io.EOF {
-			return
-		}
 		if err != nil {
-			log.Fatal(err)
+			break
 		}
-
-		switch {
-		case t == json.Delim('{'):
-			fmt.Printf("{\n")
-			continue
-		case t == json.Delim('}'):
-			fmt.Printf("}\n")
-			continue
-		case t == json.Delim('['):
-			fmt.Printf("[\n")
-			continue
-		case t == json.Delim(']'):
-			fmt.Printf("]\n")
-			continue
-		}
-
-		fmt.Printf("%#v\n", t)
 	}
+
+	if err != io.EOF {
+		log.Printf("got non EOF: %#v", err)
+		return nil, err
+	}
+
+	// remove non-leafs
+	result := []string{}
+	for _, p := range keys.values {
+		if isParentPath(p, keys.values) {
+			continue
+		}
+		result = append(result, p)
+	}
+
+	return result, nil
+}
+
+func isParentPath(path string, allPaths []string) bool {
+
+	for _, p := range allPaths {
+		if path != p && strings.HasPrefix(p, path) {
+			return true
+		}
+	}
+
+	return false
 }
 
 type uniqueStrings struct {
